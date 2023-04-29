@@ -19,5 +19,6 @@ add_executable("${PROJECT_NAME}" main.cpp
 target_link_libraries("${PROJECT_NAME}" 	opencv_world470d
 						  )
 						  
-file(COPY "res" DESTINATION "/")	
+file(COPY "res" DESTINATION "/")
+file(COPY "opencv" DESTINATION "/")	
 						 
