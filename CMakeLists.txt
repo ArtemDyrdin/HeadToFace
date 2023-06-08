@@ -23,7 +23,9 @@ add_executable("${PROJECT_NAME}" main.cpp
 				wheel-driver/protocol/ModbusMaster.hpp
 				)	# добавить исполняемый файл
 
-target_link_libraries("${PROJECT_NAME}" 	opencv_world470d
+target_link_libraries("${PROJECT_NAME}" 
+											opencv_world470
+											# opencv_world470d
 						  )
 						  
 file(COPY "res" DESTINATION "/")

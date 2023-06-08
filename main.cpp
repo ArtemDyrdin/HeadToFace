@@ -2,94 +2,94 @@
 #include<opencv2/highgui.hpp>
 #include<opencv2/imgproc.hpp>
 #include<opencv2/objdetect.hpp>
-#include<iostream>
-
+#include "wheel-driver/protocol/ModbusMaster.hpp"
+#include <thread>
+#include <chrono>
 
 using namespace std;
 using namespace cv;
 
-//вычисляем уголок, на который будем поворачивать изображение
-double rotate_angle(Point2f leye_c, Point2f reye_c)
-{
-    double angle = atan((reye_c.y - leye_c.y) / (reye_c.x - leye_c.x));//так просто? чзх
-    return angle;
-}
 
-//нахождение центра прямоугольника
+//Нахождение центра прямоугольника
 Point2f getcenter_rect(Point2f tl, Point2f br)
 {
-    Point2f center( ((br.x - tl.x) / 2.0) + tl.x, ((tl.y - br.y) / 2.0) + tl.y);
+    Point2f center((tl.x + br.x) / 2, (tl.y + br.y) / 2);
     return center;
 }
 
 
 int main()
 {
+    /* robot::protocol::ModbusMaster mb("COM3", 115200);
+     mb.Setup();
+     std::this_thread::sleep_for(std::chrono::milliseconds(1000));*/
+
     VideoCapture video(0);
-    CascadeClassifier facedetect;
-    CascadeClassifier eyedetect;
     Mat img;
-    Mat rot_img;
+
+    //Обнаружение лица
+    CascadeClassifier facedetect;
     facedetect.load("res/haarcascades/haarcascade_frontalface_default.xml");
-    eyedetect.load("res/haarcascades/haarcascade_eye_tree_eyeglasses.xml");
-    //где-то читал, что штука снизу лучше штуки сверху, но это не точно 
+    vector<Rect> faces;
     //facedetect.load("res/lbpcascades/lbpcascade_frontalface_improved.xml");
 
-    while (true) {
-        //считываем кадры в изображение
-        //video.read(img);
+    int k = 126; // константа, связывающая расстояние до лица и сторону квадрата: c = k/a, где c - расстояние, a - сторона квадрата
+    int face_x = 0, face_y = 0; // абсолютный угол поворота камеры
+    double leg_x, leg_y, dist, side;
+    int angle_x = 0, angle_y = 0;
+    int f_index = 0;
+
+    while (true)
+    {
         video >> img;
+
+        facedetect.detectMultiScale(img, faces, 1.3, 5);
 
         //центр изображения
         Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0);
-       
-        //немного объявлений
-        vector<Rect> faces;
-        vector<Rect> eyes;
-        Rect leye;
-        Rect reye;
-        Mat RotMat; // матрица поворота
-        double angle = 0;
 
-        //детект лица и глаз, всё идёт в соответствующие векторы
-        facedetect.detectMultiScale(img, faces, 1.3, 5); 
-        eyedetect.detectMultiScale(img, eyes, 1.3, 5);  
-        
 
-       // определяем глаза и угол, если задетекчено 2 глаза
-        if (eyes.size() == 2)
+        for (int i = 0; i < faces.size(); i++)
         {
-            //определим левый и правый глазки
-            if (eyes[0].tl().x < eyes[1].tl().x)
+            int side_ = 0;
+            if (faces[i].height > side_)
             {
-                leye = eyes[0];
-                reye = eyes[1];
+                side_ = faces[i].height;
+                f_index = i;
+
             }
-            else
-            {
-                leye = eyes[1];
-                reye = eyes[0];
-            }
-            //угол 
-            angle = rotate_angle(getcenter_rect(reye.tl(), reye.br()), getcenter_rect(leye.tl(), leye.br()));
         }
 
-        int angle_ = angle * 180 / acos(-1);
+        side = faces[f_index].height;
+        leg_y = (getcenter_rect(faces[f_index].tl(), faces[f_index].br()).y - center.y) * 0.000264;
+        leg_x = (getcenter_rect(faces[f_index].tl(), faces[f_index].br()).x - center.x) * 0.000264;
+        dist = k / side;
+        angle_y = -atan(leg_y / dist) * 180 / acos(-1);
+        angle_x = -atan(leg_x / dist) * 180 / acos(-1);
 
-        putText(img, to_string(angle*180/acos(-1)) + " - Angle", Point(10, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1);
-        //вывод прямоугольничков(лица и глаз)
-        for (int i = 0; i < faces.size(); i++) 
+        face_x += angle_x;
+        face_y += angle_y;
+
+        for (int i = 0; i < faces.size(); i++)
         {
             rectangle(img, faces[i].tl(), faces[i].br(), Scalar(50, 255, 255), 5);
+            putText(img, to_string(face_x) + " " + to_string(face_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1);
         }
-        for (int i = 0; i < eyes.size(); ++i)
-        {
-            rectangle(img, eyes[i].tl(), eyes[i].br(), Scalar(50, 50, 255), 5);
 
+        /*if (face_x >= -45 && face_x <= 45)
+        {
+            mb.WriteMultiAnalogOutput(0x01, 0x0006, {
+                    static_cast<uint16_t>(face_x)
+                });
         }
-        //выводим изображение
-        imshow("Frame", img);
-        waitKey(1);
+        if (face_y >= -20 && face_y <= 20)
+        {
+            mb.WriteMultiAnalogOutput(0x01, 0x0005, {
+                    static_cast<uint16_t>(face_y)
+                });
+        }*/
+
+        cv::imshow("Frame", img);
+        cv::waitKey(1);
     }
-    
 }
