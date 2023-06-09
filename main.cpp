@@ -73,7 +73,7 @@ int main()
         for (int i = 0; i < faces.size(); i++)
         {
             rectangle(img, faces[i].tl(), faces[i].br(), Scalar(50, 255, 255), 5);
-            putText(img, to_string(face_x) + " " + to_string(face_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1);
+            putText(img, to_string(angle_x) + " " + to_string(angle_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1);
         }
 
         /*if (face_x >= -45 && face_x <= 45)
