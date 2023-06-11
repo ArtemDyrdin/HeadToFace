@@ -35,7 +35,7 @@ int main()
 
     int k = 126; // константа, связывающая расстояние до лица и сторону квадрата: c = k/a, где c - расстояние, a - сторона квадрата
     int face_x = 0, face_y = 0; // абсолютный угол поворота камеры
-    double leg_x, leg_y, dist, side;
+    double leg_x=0, leg_y=0, dist=0, side=0;
     int angle_x = 0, angle_y = 0;
     int f_index = 0;
 
@@ -49,9 +49,8 @@ int main()
         Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0);
 
 
-        for (int i = 0; i < faces.size(); i++)
+        for (int i = 0, side_ = 0; i < faces.size(); i++)
         {
-            int side_ = 0;
             if (faces[i].height > side_)
             {
                 side_ = faces[i].height;
@@ -59,6 +58,19 @@ int main()
 
             }
         }
+
+       /* if (faces.size() != 0)
+        {
+            side = faces[f_index].height;
+            leg_y = (getcenter_rect(faces[f_index].tl(), faces[f_index].br()).y - center.y) * 0.000264;
+            leg_x = (getcenter_rect(faces[f_index].tl(), faces[f_index].br()).x - center.x) * 0.000264;
+            dist = k / side;
+            angle_y = -atan(leg_y / dist) * 180 / acos(-1);
+            angle_x = -atan(leg_x / dist) * 180 / acos(-1);
+
+            face_x += angle_x;
+            face_y += angle_y;
+        }*/
 
         side = faces[f_index].height;
         leg_y = (getcenter_rect(faces[f_index].tl(), faces[f_index].br()).y - center.y) * 0.000264;
@@ -69,6 +81,9 @@ int main()
 
         face_x += angle_x;
         face_y += angle_y;
+
+
+        //rectangle(img, faces[f_index].tl(), faces[f_index].br(), Scalar(50, 255, 255), 5);
 
         for (int i = 0; i < faces.size(); i++)
         {
@@ -93,3 +108,4 @@ int main()
         cv::waitKey(1);
     }
 }
+
