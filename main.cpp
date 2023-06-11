@@ -3,92 +3,146 @@
 #include<opencv2/imgproc.hpp>
 #include<opencv2/objdetect.hpp>
 #include<iostream>
+#include<math.h>
 
 
 using namespace std;
 using namespace cv;
 
-//вычисляем уголок, на который будем поворачивать изображение
-double rotate_angle(Point2f leye_c, Point2f reye_c)
+// функция поворота изображения
+Mat rotate(Mat src, double angle)
 {
-    double angle = atan((reye_c.y - leye_c.y) / (reye_c.x - leye_c.x));//так просто? чзх
-    return angle;
+    Mat dst;
+    Point2f pt(src.cols / 2., src.rows / 2.);  
+    Mat r = getRotationMatrix2D(pt, angle, 1.0);
+    warpAffine(src, dst, r, Size(src.cols, src.rows));
+    return dst;
 }
 
-//нахождение центра прямоугольника
+// получить координаты центра
 Point2f getcenter_rect(Point2f tl, Point2f br)
 {
-    Point2f center( ((br.x - tl.x) / 2.0) + tl.x, ((tl.y - br.y) / 2.0) + tl.y);
+    Point2f center((tl.x + br.x) / 2, (tl.y + br.y) / 2);
     return center;
 }
 
+// функция нахождения индекса самого переднего лица
+int get_front_face_index(vector<Rect>& faces) {
+    int front_face_index = 0;
+    for (int i = 0; i < faces.size(); i++)
+    {
+        int max_side = 0;
+        if (faces[i].height > max_side)
+        {
+            max_side = faces[i].height;
+            front_face_index = i;
+        }
+    }
+    return front_face_index;
+}
+
+// функция определения координат наклоненного лица
+void determ_true_face_coord(vector<Rect>& faces, const int front_face_index, int angle, const int video_width, int const video_height) {
+    // нахождение координат центра лица (из координат верхнего левого угла лица) в с/к с центром в середине изображения
+    int face_X = faces[front_face_index].x + faces[front_face_index].width / 2 - video_width / 2;
+    int face_Y = -faces[front_face_index].y - faces[front_face_index].height / 2 + video_height / 2;
+
+    // нахождение координат центра лица в с/к, повернутой обратно
+    angle = -angle;
+    int old_x = face_X * cos(angle) - face_Y * sin(angle);
+    int old_y = face_Y * cos(angle) + face_X * sin(angle);
+    if (abs(angle) == 35) {
+        old_x = -old_x;
+        old_y = -old_y;
+    }
+
+    // определение левого верхнего угла лица (из этого параметра мы находили центр лица)
+    faces[front_face_index].x = old_x - faces[front_face_index].width / 2 + video_width / 2;
+    faces[front_face_index].y = -old_y - faces[front_face_index].height / 2 + video_height / 2;
+}
 
 int main()
 {
     VideoCapture video(0);
     CascadeClassifier facedetect;
-    CascadeClassifier eyedetect;
     Mat img;
-    Mat rot_img;
     facedetect.load("res/haarcascades/haarcascade_frontalface_default.xml");
-    eyedetect.load("res/haarcascades/haarcascade_eye_tree_eyeglasses.xml");
-    //где-то читал, что штука снизу лучше штуки сверху, но это не точно 
-    //facedetect.load("res/lbpcascades/lbpcascade_frontalface_improved.xml");
+
+    const int video_width = video.get(cv::CAP_PROP_FRAME_WIDTH); // ширина видеопотока
+    const int video_height = video.get(cv::CAP_PROP_FRAME_HEIGHT); // высота видеопотока
+
+    int k = 126; // константа, связывающая расстояние до лица и сторону квадрата: c = k/a, где c - расстояние, a - сторона квадрата
+    int face_x = 0, face_y = 0; // абсолютный угол поворота камеры
+    double leg_x, leg_y, dist, side;
+    int angle_x = 0, angle_y = 0;
 
     while (true) {
-        //считываем кадры в изображение
-        //video.read(img);
-        video >> img;
+        video >> img; // получение текущего изображения
 
-        //центр изображения
-        Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0);
+        Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0); // центр изображения
        
-        //немного объявлений
-        vector<Rect> faces;
-        vector<Rect> eyes;
-        Rect leye;
-        Rect reye;
-        Mat RotMat; // матрица поворота
-        double angle = 0;
+        vector<Rect> faces; // создание массива с лицами
 
-        //детект лица и глаз, всё идёт в соответствующие векторы
-        facedetect.detectMultiScale(img, faces, 1.3, 5); 
-        eyedetect.detectMultiScale(img, eyes, 1.3, 5);  
-        
+        int angle = 0; // угол наклона лица
 
-       // определяем глаза и угол, если задетекчено 2 глаза
-        if (eyes.size() == 2)
-        {
-            //определим левый и правый глазки
-            if (eyes[0].tl().x < eyes[1].tl().x)
-            {
-                leye = eyes[0];
-                reye = eyes[1];
+        // поворачиваем на 35 градусов влево/вправо пока не найдем лицо или дойдем до остановы и сохраняем параметры лица под найденным углом
+        facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
+        if (faces.size() == 0) {
+            angle = 35;
+            facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
+            if (faces.size() == 0) {
+                angle = -35;
+                facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
+                if (faces.size() == 0) {
+                    angle = 70;
+                    facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
+                    if (faces.size() == 0) {
+                        angle = -70;
+                        facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
+                    }
+                }
             }
-            else
-            {
-                leye = eyes[1];
-                reye = eyes[0];
-            }
-            //угол 
-            angle = rotate_angle(getcenter_rect(reye.tl(), reye.br()), getcenter_rect(leye.tl(), leye.br()));
         }
 
-        int angle_ = angle * 180 / acos(-1);
+        if (faces.size() != 0) {
 
-        putText(img, to_string(angle*180/acos(-1)) + " - Angle", Point(10, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1);
-        //вывод прямоугольничков(лица и глаз)
-        for (int i = 0; i < faces.size(); i++) 
+            int front_face_index = get_front_face_index(faces); // индекс переднего лица
+
+            // определение координат лица из перевернутого изображения
+            if (angle != 0)
+                determ_true_face_coord(faces, front_face_index, angle, video_width, video_height);
+
+            side = faces[front_face_index].height;
+            leg_y = (getcenter_rect(faces[front_face_index].tl(), faces[front_face_index].br()).y - center.y) * 0.000264;
+            leg_x = (getcenter_rect(faces[front_face_index].tl(), faces[front_face_index].br()).x - center.x) * 0.000264;
+            dist = k / side;
+            angle_y = -atan(leg_y / dist) * 180 / acos(-1);
+            angle_x = -atan(leg_x / dist) * 180 / acos(-1);
+
+            face_x += angle_x;
+            face_y += angle_y;
+
+
+            rectangle(img, faces[front_face_index].tl(), faces[front_face_index].br(), Scalar(0, 255, 0), 5); // построение рамки лица
+            putText(img, to_string(angle_x) + " " + to_string(angle_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1); // вывод углов до лица
+        }
+
+        /*if (face_x >= -45 && face_x <= 45)
         {
-            rectangle(img, faces[i].tl(), faces[i].br(), Scalar(50, 255, 255), 5);
+            mb.WriteMultiAnalogOutput(0x01, 0x0006, {
+                    static_cast<uint16_t>(face_x)
+                });
         }
-        for (int i = 0; i < eyes.size(); ++i)
+        if (face_y >= -20 && face_y <= 20)
         {
-            rectangle(img, eyes[i].tl(), eyes[i].br(), Scalar(50, 50, 255), 5);
+            mb.WriteMultiAnalogOutput(0x01, 0x0005, {
+                    static_cast<uint16_t>(face_y)
+                });
+        }*/
 
-        }
+
         //выводим изображение
-        imshow("Frame", img);
+        imshow("Eye", img);
         waitKey(1);
     }
     
