@@ -22,14 +22,10 @@ add_executable("${PROJECT_NAME}" main.cpp
 				wheel-driver/io/SerialConnector.hpp
 				wheel-driver/protocol/ModbusMaster.hpp
 				)	# добавить исполняемый файл
-
-<<<<<<< HEAD
-target_link_libraries("${PROJECT_NAME}" 	opencv_world470
-=======
+        
 target_link_libraries("${PROJECT_NAME}" 
 											opencv_world470
 											# opencv_world470d
->>>>>>> 50bc4f2b798057f0e2d5d754895f2cfa23f3d6e7
 						  )
 						  
 file(COPY "res" DESTINATION "/")

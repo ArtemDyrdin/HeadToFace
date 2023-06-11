@@ -3,13 +3,14 @@
 #include<opencv2/imgproc.hpp>
 #include<opencv2/objdetect.hpp>
 #include<iostream>
-#include<math.h>
-
+#include "wheel-driver/protocol/ModbusMaster.hpp"
+#include <thread>
+#include <chrono>
 
 using namespace std;
 using namespace cv;
 
-// функция поворота изображения
+// ГґГіГ­ГЄГ¶ГЁГї ГЇГ®ГўГ®Г°Г®ГІГ  ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї
 Mat rotate(Mat src, double angle)
 {
     Mat dst;
@@ -19,14 +20,14 @@ Mat rotate(Mat src, double angle)
     return dst;
 }
 
-// получить координаты центра
+//ГЌГ ГµГ®Г¦Г¤ГҐГ­ГЁГҐ Г¶ГҐГ­ГІГ°Г  ГЇГ°ГїГ¬Г®ГіГЈГ®Г«ГјГ­ГЁГЄГ 
 Point2f getcenter_rect(Point2f tl, Point2f br)
 {
     Point2f center((tl.x + br.x) / 2, (tl.y + br.y) / 2);
     return center;
 }
 
-// функция нахождения индекса самого переднего лица
+// ГґГіГ­ГЄГ¶ГЁГї Г­Г ГµГ®Г¦Г¤ГҐГ­ГЁГї ГЁГ­Г¤ГҐГЄГ±Г  Г±Г Г¬Г®ГЈГ® ГЇГҐГ°ГҐГ¤Г­ГҐГЈГ® Г«ГЁГ¶Г 
 int get_front_face_index(vector<Rect>& faces) {
     int front_face_index = 0;
     for (int i = 0; i < faces.size(); i++)
@@ -41,13 +42,13 @@ int get_front_face_index(vector<Rect>& faces) {
     return front_face_index;
 }
 
-// функция определения координат наклоненного лица
+// ГґГіГ­ГЄГ¶ГЁГї Г®ГЇГ°ГҐГ¤ГҐГ«ГҐГ­ГЁГї ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г­Г ГЄГ«Г®Г­ГҐГ­Г­Г®ГЈГ® Г«ГЁГ¶Г 
 void determ_true_face_coord(vector<Rect>& faces, const int front_face_index, int angle, const int video_width, int const video_height) {
-    // нахождение координат центра лица (из координат верхнего левого угла лица) в с/к с центром в середине изображения
+    // Г­Г ГµГ®Г¦Г¤ГҐГ­ГЁГҐ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г¶ГҐГ­ГІГ°Г  Г«ГЁГ¶Г  (ГЁГ§ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ ГўГҐГ°ГµГ­ГҐГЈГ® Г«ГҐГўГ®ГЈГ® ГіГЈГ«Г  Г«ГЁГ¶Г ) Гў Г±/ГЄ Г± Г¶ГҐГ­ГІГ°Г®Г¬ Гў Г±ГҐГ°ГҐГ¤ГЁГ­ГҐ ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї
     int face_X = faces[front_face_index].x + faces[front_face_index].width / 2 - video_width / 2;
     int face_Y = -faces[front_face_index].y - faces[front_face_index].height / 2 + video_height / 2;
 
-    // нахождение координат центра лица в с/к, повернутой обратно
+    // Г­Г ГµГ®Г¦Г¤ГҐГ­ГЁГҐ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г¶ГҐГ­ГІГ°Г  Г«ГЁГ¶Г  Гў Г±/ГЄ, ГЇГ®ГўГҐГ°Г­ГіГІГ®Г© Г®ГЎГ°Г ГІГ­Г®
     angle = -angle;
     int old_x = face_X * cos(angle) - face_Y * sin(angle);
     int old_y = face_Y * cos(angle) + face_X * sin(angle);
@@ -56,36 +57,40 @@ void determ_true_face_coord(vector<Rect>& faces, const int front_face_index, int
         old_y = -old_y;
     }
 
-    // определение левого верхнего угла лица (из этого параметра мы находили центр лица)
+    // Г®ГЇГ°ГҐГ¤ГҐГ«ГҐГ­ГЁГҐ Г«ГҐГўГ®ГЈГ® ГўГҐГ°ГµГ­ГҐГЈГ® ГіГЈГ«Г  Г«ГЁГ¶Г  (ГЁГ§ ГЅГІГ®ГЈГ® ГЇГ Г°Г Г¬ГҐГІГ°Г  Г¬Г» Г­Г ГµГ®Г¤ГЁГ«ГЁ Г¶ГҐГ­ГІГ° Г«ГЁГ¶Г )
     faces[front_face_index].x = old_x - faces[front_face_index].width / 2 + video_width / 2;
     faces[front_face_index].y = -old_y - faces[front_face_index].height / 2 + video_height / 2;
 }
 
 int main()
 {
+    /* robot::protocol::ModbusMaster mb("COM3", 115200);
+     mb.Setup();
+     std::this_thread::sleep_for(std::chrono::milliseconds(1000));*/
+
     VideoCapture video(0);
     CascadeClassifier facedetect;
     Mat img;
     facedetect.load("res/haarcascades/haarcascade_frontalface_default.xml");
 
-    const int video_width = video.get(cv::CAP_PROP_FRAME_WIDTH); // ширина видеопотока
-    const int video_height = video.get(cv::CAP_PROP_FRAME_HEIGHT); // высота видеопотока
+    const int video_width = video.get(cv::CAP_PROP_FRAME_WIDTH); // ГёГЁГ°ГЁГ­Г  ГўГЁГ¤ГҐГ®ГЇГ®ГІГ®ГЄГ 
+    const int video_height = video.get(cv::CAP_PROP_FRAME_HEIGHT); // ГўГ»Г±Г®ГІГ  ГўГЁГ¤ГҐГ®ГЇГ®ГІГ®ГЄГ 
 
-    int k = 126; // константа, связывающая расстояние до лица и сторону квадрата: c = k/a, где c - расстояние, a - сторона квадрата
-    int face_x = 0, face_y = 0; // абсолютный угол поворота камеры
+    int k = 126; // ГЄГ®Г­Г±ГІГ Г­ГІГ , Г±ГўГїГ§Г»ГўГ ГѕГ№Г Гї Г°Г Г±Г±ГІГ®ГїГ­ГЁГҐ Г¤Г® Г«ГЁГ¶Г  ГЁ Г±ГІГ®Г°Г®Г­Гі ГЄГўГ Г¤Г°Г ГІГ : c = k/a, ГЈГ¤ГҐ c - Г°Г Г±Г±ГІГ®ГїГ­ГЁГҐ, a - Г±ГІГ®Г°Г®Г­Г  ГЄГўГ Г¤Г°Г ГІГ 
+    int face_x = 0, face_y = 0; // Г ГЎГ±Г®Г«ГѕГІГ­Г»Г© ГіГЈГ®Г« ГЇГ®ГўГ®Г°Г®ГІГ  ГЄГ Г¬ГҐГ°Г»
     double leg_x, leg_y, dist, side;
     int angle_x = 0, angle_y = 0;
 
     while (true) {
-        video >> img; // получение текущего изображения
+        video >> img; // ГЇГ®Г«ГіГ·ГҐГ­ГЁГҐ ГІГҐГЄГіГ№ГҐГЈГ® ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї
 
-        Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0); // центр изображения
+        Point center((img.cols - 1) / 2.0, (img.rows - 1) / 2.0); // Г¶ГҐГ­ГІГ° ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї
        
-        vector<Rect> faces; // создание массива с лицами
+        vector<Rect> faces; // Г±Г®Г§Г¤Г Г­ГЁГҐ Г¬Г Г±Г±ГЁГўГ  Г± Г«ГЁГ¶Г Г¬ГЁ
 
-        int angle = 0; // угол наклона лица
+        int angle = 0; // ГіГЈГ®Г« Г­Г ГЄГ«Г®Г­Г  Г«ГЁГ¶Г 
 
-        // поворачиваем на 35 градусов влево/вправо пока не найдем лицо или дойдем до остановы и сохраняем параметры лица под найденным углом
+        // ГЇГ®ГўГ®Г°Г Г·ГЁГўГ ГҐГ¬ Г­Г  35 ГЈГ°Г Г¤ГіГ±Г®Гў ГўГ«ГҐГўГ®/ГўГЇГ°Г ГўГ® ГЇГ®ГЄГ  Г­ГҐ Г­Г Г©Г¤ГҐГ¬ Г«ГЁГ¶Г® ГЁГ«ГЁ Г¤Г®Г©Г¤ГҐГ¬ Г¤Г® Г®Г±ГІГ Г­Г®ГўГ» ГЁ Г±Г®ГµГ°Г Г­ГїГҐГ¬ ГЇГ Г°Г Г¬ГҐГІГ°Г» Г«ГЁГ¶Г  ГЇГ®Г¤ Г­Г Г©Г¤ГҐГ­Г­Г»Г¬ ГіГЈГ«Г®Г¬
         facedetect.detectMultiScale(rotate(img, angle), faces, 1.3, 5);
         if (faces.size() == 0) {
             angle = 35;
@@ -106,9 +111,9 @@ int main()
 
         if (faces.size() != 0) {
 
-            int front_face_index = get_front_face_index(faces); // индекс переднего лица
+            int front_face_index = get_front_face_index(faces); // ГЁГ­Г¤ГҐГЄГ± ГЇГҐГ°ГҐГ¤Г­ГҐГЈГ® Г«ГЁГ¶Г 
 
-            // определение координат лица из перевернутого изображения
+            // Г®ГЇГ°ГҐГ¤ГҐГ«ГҐГ­ГЁГҐ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г«ГЁГ¶Г  ГЁГ§ ГЇГҐГ°ГҐГўГҐГ°Г­ГіГІГ®ГЈГ® ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї
             if (angle != 0)
                 determ_true_face_coord(faces, front_face_index, angle, video_width, video_height);
 
@@ -123,8 +128,8 @@ int main()
             face_y += angle_y;
 
 
-            rectangle(img, faces[front_face_index].tl(), faces[front_face_index].br(), Scalar(0, 255, 0), 5); // построение рамки лица
-            putText(img, to_string(angle_x) + " " + to_string(angle_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1); // вывод углов до лица
+            rectangle(img, faces[front_face_index].tl(), faces[front_face_index].br(), Scalar(0, 255, 0), 5); // ГЇГ®Г±ГІГ°Г®ГҐГ­ГЁГҐ Г°Г Г¬ГЄГЁ Г«ГЁГ¶Г 
+            putText(img, to_string(angle_x) + " " + to_string(angle_y), Point(20, 40), FONT_HERSHEY_DUPLEX, 1, Scalar(0, 0, 0), 1); // ГўГ»ГўГ®Г¤ ГіГЈГ«Г®Гў Г¤Г® Г«ГЁГ¶Г 
         }
 
         /*if (face_x >= -45 && face_x <= 45)
@@ -141,9 +146,9 @@ int main()
         }*/
 
 
-        //выводим изображение
+        //ГўГ»ГўГ®Г¤ГЁГ¬ ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГҐ
         imshow("Eye", img);
         waitKey(1);
     }
-    
 }
+
